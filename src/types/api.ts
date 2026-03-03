@@ -66,3 +66,27 @@ export interface AgentChatResponse {
   taskFamily?: string;
   metadata?: Record<string, unknown>;
 }
+
+export interface SmsSendCodeRequest {
+  phone: string;
+}
+
+export interface SmsSendCodeResponse {
+  success: boolean;
+  requestId: string;
+  expireSeconds: number;
+  resendIntervalSeconds: number;
+}
+
+export interface SmsLoginRequest {
+  phone: string;
+  code: string;
+}
+
+export interface UserAuthInfo {
+  userId: number;
+  username: string;
+  email: string | null;
+  phone: string;
+  newUser: boolean;
+}
