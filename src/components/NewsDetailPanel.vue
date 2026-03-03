@@ -19,6 +19,15 @@ defineProps<{
     </header>
 
     <div class="mt-4 space-y-4">
+      <a
+        v-if="selectedStory.link"
+        :href="selectedStory.link"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="source-link"
+      >
+        原文链接
+      </a>
       <div v-if="detailError" class="detail-panel detail-panel--chat">
         <p class="detail-panel__title">Detail unavailable</p>
         <p class="detail-panel__summary">{{ detailError }}</p>

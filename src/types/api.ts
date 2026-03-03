@@ -39,6 +39,8 @@ export interface AgentChatConstraints {
 export interface AgentChatRequest {
   userId?: string;
   sessionId?: string;
+  turnId?: string;
+  idempotencyKey?: string;
   query: string;
   constraints?: AgentChatConstraints;
 }
@@ -54,6 +56,10 @@ export interface AgentCandidate {
 
 export interface AgentChatResponse {
   sessionId: string;
+  turnId?: string;
+  turnStatus?: "DONE" | "RUNNING" | "BUSY" | "FAILED";
+  errorCode?: string | null;
+  runningTurnId?: string | null;
   answer: string;
   candidates?: AgentCandidate[];
   citations?: string[];

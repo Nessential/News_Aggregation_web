@@ -149,7 +149,7 @@ void loadStories();
   <div class="app-shell">
     <SidebarNav />
 
-    <main class="space-y-6">
+    <main class="space-y-6 scroll-column">
       <section class="panel panel-soft p-5">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
