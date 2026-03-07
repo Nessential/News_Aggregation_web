@@ -1,0 +1,10 @@
+{
+  "apiBaseUrls": {
+    "news": "http://localhost:8080",
+    "agent": "http://localhost:8084"
+  },
+  "timeout": {
+    "requestMs": 60000,
+    "chatPollMs": 60000
+  }
+}

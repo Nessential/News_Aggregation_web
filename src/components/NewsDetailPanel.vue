@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { Story } from "../types/news";
 
-defineProps<{
+const props = defineProps<{
   selectedStory: Story;
   detailLoading?: boolean;
   detailError?: string;
 }>();
+
+const articleBody = computed(() => props.selectedStory.content || props.selectedStory.detailSummary);
 </script>
 
 <template>
@@ -26,7 +29,7 @@ defineProps<{
         rel="noopener noreferrer"
         class="source-link"
       >
-        原文链接
+        Open original article
       </a>
       <div v-if="detailError" class="detail-panel detail-panel--chat">
         <p class="detail-panel__title">Detail unavailable</p>
@@ -44,15 +47,18 @@ defineProps<{
         <h3 class="text-base font-semibold text-slate-900">
           {{ selectedStory.title }}
         </h3>
-        <p class="text-sm text-slate-500">{{ selectedStory.detailSummary }}</p>
+        <p v-if="selectedStory.source" class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          {{ selectedStory.source }}
+        </p>
         <p class="text-xs font-semibold text-slate-400">{{ selectedStory.updatedAt }}</p>
       </div>
       <div class="detail-panel">
-        <p class="detail-panel__eyebrow">Evidence (Mock)</p>
-        <p class="detail-panel__summary">
-          Verified updates are being aggregated from official sources and on-site reports to
-          maintain a clean, searchable incident timeline.
-        </p>
+        <p class="detail-panel__eyebrow">Summary</p>
+        <p class="detail-panel__summary">{{ selectedStory.summary }}</p>
+      </div>
+      <div class="detail-panel">
+        <p class="detail-panel__eyebrow">Content</p>
+        <p class="detail-panel__body">{{ articleBody }}</p>
       </div>
     </div>
   </aside>

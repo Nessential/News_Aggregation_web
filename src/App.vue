@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { topStories } from "./data/mock";
 import type { Story } from "./types/news";
@@ -69,6 +69,24 @@ const mapListItemToStory = (item: ArticleListItem, index: number): Story => {
     source: item.source,
     link: item.link,
     publishedAt: item.publishedAt,
+  };
+};
+
+const mapDetailToStory = (detail: ArticleDetailResponse): Story => {
+  const existing = stories.value.find((story) => story.id === String(detail.id));
+  const fallbackImage = existing?.image ?? fallbackStories[0]?.image ?? "";
+  return {
+    id: String(detail.id),
+    title: detail.title || existing?.title || "Untitled article",
+    summary: detail.summary || existing?.summary || "",
+    image: detail.imageUrl ?? fallbackImage,
+    updatedAt: formatPublishedAt(detail),
+    detailSummary: detail.content ?? detail.summary ?? existing?.detailSummary ?? "",
+    highlights: existing?.highlights ?? [],
+    source: detail.source ?? existing?.source,
+    link: detail.link ?? existing?.link,
+    publishedAt: detail.publishedAt ?? existing?.publishedAt,
+    content: detail.content ?? existing?.content,
   };
 };
 
@@ -206,24 +224,17 @@ const handleLogout = () => {
   saveUser(null);
 };
 
+const upsertStory = (story: Story) => {
+  const existingIndex = stories.value.findIndex((item) => item.id === story.id);
+  if (existingIndex >= 0) {
+    stories.value = stories.value.map((item) => (item.id === story.id ? { ...item, ...story } : item));
+    return;
+  }
+  stories.value = [story, ...stories.value];
+};
+
 const applyDetailToStory = (detail: ArticleDetailResponse) => {
-  const storyId = String(detail.id);
-  const updated = stories.value.map((story) => {
-    if (story.id !== storyId) return story;
-    return {
-      ...story,
-      title: detail.title ?? story.title,
-      summary: detail.summary ?? story.summary,
-      detailSummary: detail.content ?? detail.summary ?? story.detailSummary,
-      image: detail.imageUrl ?? story.image,
-      source: detail.source ?? story.source,
-      link: detail.link ?? story.link,
-      publishedAt: detail.publishedAt ?? story.publishedAt,
-      updatedAt: formatPublishedAt(detail),
-      content: detail.content ?? story.content,
-    };
-  });
-  stories.value = updated;
+  upsertStory(mapDetailToStory(detail));
 };
 
 const loadStories = async () => {
@@ -276,6 +287,30 @@ const loadStoryDetail = async (storyId: string) => {
 
 const handleSelect = (story: Story) => {
   selectedId.value = story.id;
+};
+
+const handleSelectArticleFromChat = async (articleId: number) => {
+  const storyId = String(articleId);
+  if (stories.value.some((story) => story.id === storyId)) {
+    selectedId.value = storyId;
+    return;
+  }
+
+  isDetailLoading.value = true;
+  detailError.value = "";
+  pushDebug(`Request: GET /api/news/articles/${storyId}?lang=zh [from chat]`);
+
+  try {
+    const detail = await fetchArticleDetail(storyId, preferredLang.value === "zh" ? "zh" : undefined);
+    applyDetailToStory(detail);
+    selectedId.value = storyId;
+    pushDebug(`Response: /api/news/articles/${storyId} [from chat]`);
+  } catch (error) {
+    detailError.value = formatApiError(error);
+    pushDebug(`Error: /api/news/articles/${storyId} [from chat] ${detailError.value}`);
+  } finally {
+    isDetailLoading.value = false;
+  }
 };
 
 watch(selectedId, (id) => {
@@ -359,7 +394,10 @@ onBeforeUnmount(() => {
         :detail-error="detailError"
       />
 
-      <ChatPanel />
+      <ChatPanel
+        :active-article-id="selectedId"
+        @select-article="handleSelectArticleFromChat"
+      />
     </div>
 
     <div v-if="showLoginModal" class="auth-modal-mask" @click.self="closeLoginModal">

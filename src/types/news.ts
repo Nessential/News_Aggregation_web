@@ -1,3 +1,5 @@
+import type { AgentAnswerItem } from "./api";
+
 export interface Category {
   id: string;
   label: string;
@@ -31,4 +33,5 @@ export interface ChatMessage {
   role: ChatRole;
   content: string;
   time: string;
+  answerItems?: AgentAnswerItem[];
 }

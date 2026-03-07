@@ -1,4 +1,4 @@
-﻿export interface ArticleListItem {
+export interface ArticleListItem {
   id: number;
   title: string;
   summary: string;
@@ -26,6 +26,19 @@ export interface ArticleDetailResponse extends ArticleListItem {
   contentEn?: string;
 }
 
+export interface ArticleBatchItem {
+  id: number;
+  title: string;
+  url?: string;
+  content?: string;
+  source?: string;
+  publishedAt?: string;
+}
+
+export interface ArticleBatchResponse {
+  articles: ArticleBatchItem[];
+}
+
 export interface AgentChatConstraints {
   timeRangeStart?: string;
   timeRangeEnd?: string;
@@ -45,13 +58,20 @@ export interface AgentChatRequest {
   constraints?: AgentChatConstraints;
 }
 
-export interface AgentCandidate {
-  articleId?: number;
+export interface AgentRelatedNews {
+  articleId: number;
   title?: string;
   url?: string;
   snippet?: string;
   source?: string;
   publishedAt?: string;
+  imageUrl?: string;
+}
+
+export interface AgentAnswerItem {
+  text: string;
+  newsIds?: number[];
+  relatedNews?: AgentRelatedNews[];
 }
 
 export interface AgentChatResponse {
@@ -60,11 +80,19 @@ export interface AgentChatResponse {
   turnStatus?: "DONE" | "RUNNING" | "BUSY" | "FAILED";
   errorCode?: string | null;
   runningTurnId?: string | null;
-  answer: string;
-  candidates?: AgentCandidate[];
-  citations?: string[];
+  answer?: string;
+  answerItems?: AgentAnswerItem[];
   taskFamily?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface AgentSessionState {
+  sessionId: string;
+  userId?: string;
+  activeTurnId?: string | null;
+  history?: unknown[];
+  constraints?: AgentChatConstraints;
+  budget?: Record<string, unknown> | null;
 }
 
 export interface SmsSendCodeRequest {

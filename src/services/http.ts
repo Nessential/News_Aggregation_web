@@ -1,15 +1,20 @@
-﻿export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+import { APP_CONFIG } from "../config/app";
+
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface RequestOptions {
   method?: HttpMethod;
   headers?: Record<string, string>;
   body?: unknown;
   timeoutMs?: number;
+  allowedStatusCodes?: number[];
 }
 
 export interface ApiClient {
   request: <T>(path: string, options?: RequestOptions) => Promise<T>;
 }
+
+type BaseUrlResolver = string | (() => string);
 
 export class ApiError extends Error {
   status?: number;
@@ -25,7 +30,13 @@ export class ApiError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT = 15000;
+const isAllowedStatus = (status: number, allowedStatusCodes?: number[]) => {
+  return Array.isArray(allowedStatusCodes) && allowedStatusCodes.includes(status);
+};
+
+const resolveBaseUrl = (baseUrl: BaseUrlResolver) => {
+  return typeof baseUrl === "function" ? baseUrl() : baseUrl;
+};
 
 const buildUrl = (baseUrl: string, path: string) => {
   if (!baseUrl) return path;
@@ -67,13 +78,13 @@ const hasBusinessError = (payload: unknown) => {
   return false;
 };
 
-export const createApiClient = (baseUrl: string): ApiClient => {
+export const createApiClient = (baseUrl: BaseUrlResolver): ApiClient => {
   return {
     request: async <T>(path: string, options: RequestOptions = {}) => {
       const controller = new AbortController();
       const timeout = setTimeout(
         () => controller.abort(),
-        options.timeoutMs ?? DEFAULT_TIMEOUT
+        options.timeoutMs ?? APP_CONFIG.timeout.requestMs
       );
 
       const headers: Record<string, string> = {
@@ -92,10 +103,10 @@ export const createApiClient = (baseUrl: string): ApiClient => {
       }
 
       try {
-        const response = await fetch(buildUrl(baseUrl, path), init);
+        const response = await fetch(buildUrl(resolveBaseUrl(baseUrl), path), init);
         const payload = await safeParseJson(response);
 
-        if (!response.ok || hasBusinessError(payload)) {
+        if ((!response.ok && !isAllowedStatus(response.status, options.allowedStatusCodes)) || hasBusinessError(payload)) {
           const message = extractErrorMessage(payload);
           const code =
             payload && typeof payload === "object" && "code" in payload
@@ -143,3 +154,4 @@ export const formatApiError = (error: unknown) => {
   }
   return "Request failed";
 };
+

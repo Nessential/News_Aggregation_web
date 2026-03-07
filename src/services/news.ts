@@ -1,10 +1,12 @@
-﻿import type { ArticleDetailResponse, ArticleListResponse } from "../types/api";
+import { APP_CONFIG } from "../config/app";
+import type {
+  ArticleBatchResponse,
+  ArticleDetailResponse,
+  ArticleListResponse,
+} from "../types/api";
 import { createApiClient } from "./http";
 
-const newsBaseUrl =
-  import.meta.env.VITE_NEWS_API_BASE_URL ?? "http://localhost:8080";
-
-const client = createApiClient(newsBaseUrl);
+const client = createApiClient(() => APP_CONFIG.apiBaseUrls.news);
 
 export interface FetchArticlesParams {
   page?: number;
@@ -42,7 +44,7 @@ export const fetchArticleDetail = async (id: string | number, lang?: string) => 
 };
 
 export const fetchArticlesByIds = async (ids: Array<number | string>) => {
-  return client.request<{ articles: ArticleDetailResponse[] }>(
+  return client.request<ArticleBatchResponse>(
     "/api/news/articles/by-ids",
     {
       method: "POST",

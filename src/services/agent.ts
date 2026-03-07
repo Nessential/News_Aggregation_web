@@ -1,15 +1,18 @@
-﻿import type { AgentChatRequest, AgentChatResponse } from "../types/api";
+import { APP_CONFIG } from "../config/app";
+import type {
+  AgentChatRequest,
+  AgentChatResponse,
+  AgentSessionState,
+} from "../types/api";
 import { createApiClient } from "./http";
 
-const agentBaseUrl =
-  import.meta.env.VITE_AGENT_API_BASE_URL ?? "http://localhost:8084";
-
-const client = createApiClient(agentBaseUrl);
+const client = createApiClient(() => APP_CONFIG.apiBaseUrls.agent);
 
 export const sendChat = async (payload: AgentChatRequest) => {
   return client.request<AgentChatResponse>("/api/agent/chat", {
     method: "POST",
     body: payload,
+    allowedStatusCodes: [202, 409],
   });
 };
 
@@ -21,9 +24,7 @@ export const createSession = async (userId?: string) => {
 };
 
 export const getSession = async (sessionId: string) => {
-  return client.request<{ sessionId: string; userId?: string }>(
-    `/api/agent/session/${sessionId}`
-  );
+  return client.request<AgentSessionState>(`/api/agent/session/${sessionId}`);
 };
 
 export const deleteSession = async (sessionId: string) => {

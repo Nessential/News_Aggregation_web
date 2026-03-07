@@ -1,3 +1,4 @@
+import { APP_CONFIG } from "../config/app";
 import type {
   SmsLoginRequest,
   SmsSendCodeRequest,
@@ -6,9 +7,7 @@ import type {
 } from "../types/api";
 import { createApiClient } from "./http";
 
-const newsBaseUrl = import.meta.env.VITE_NEWS_API_BASE_URL ?? "http://localhost:8080";
-
-const client = createApiClient(newsBaseUrl);
+const client = createApiClient(() => APP_CONFIG.apiBaseUrls.news);
 
 export const sendSmsCode = async (payload: SmsSendCodeRequest) => {
   return client.request<SmsSendCodeResponse>("/api/user/auth/sms/send-code", {
