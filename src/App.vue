@@ -39,6 +39,7 @@ const preferredLang = ref<string>(
 );
 
 const USER_STORAGE_KEY = "news_user_auth";
+const USER_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 let resendTimer: ReturnType<typeof setInterval> | null = null;
 
 const selectedStory = computed<Story>(() => {
@@ -122,13 +123,29 @@ const startResendCountdown = (seconds: number) => {
   }, 1000);
 };
 
+const isUserAuthInfo = (value: unknown): value is UserAuthInfo => {
+  if (!value || typeof value !== "object") return false;
+  return (
+    "username" in value &&
+    typeof value.username === "string" &&
+    "phone" in value &&
+    typeof value.phone === "string"
+  );
+};
+
 const saveUser = (user: UserAuthInfo | null) => {
   if (typeof window === "undefined") return;
   if (!user) {
     localStorage.removeItem(USER_STORAGE_KEY);
     return;
   }
-  localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  localStorage.setItem(
+    USER_STORAGE_KEY,
+    JSON.stringify({
+      user,
+      expiresAt: Date.now() + USER_STORAGE_TTL_MS,
+    })
+  );
 };
 
 const restoreUser = () => {
@@ -137,9 +154,33 @@ const restoreUser = () => {
   if (!raw) return;
 
   try {
-    const parsed = JSON.parse(raw) as UserAuthInfo;
-    if (parsed && typeof parsed.username === "string" && typeof parsed.phone === "string") {
+    const parsed = JSON.parse(raw) as
+      | UserAuthInfo
+      | {
+          user?: UserAuthInfo;
+          expiresAt?: number;
+        };
+
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "user" in parsed &&
+      parsed.user &&
+      typeof parsed.expiresAt === "number"
+    ) {
+      if (parsed.expiresAt <= Date.now()) {
+        localStorage.removeItem(USER_STORAGE_KEY);
+        return;
+      }
+      if (isUserAuthInfo(parsed.user)) {
+        currentUser.value = parsed.user;
+      }
+      return;
+    }
+
+    if (isUserAuthInfo(parsed)) {
       currentUser.value = parsed;
+      saveUser(parsed);
     }
   } catch {
     localStorage.removeItem(USER_STORAGE_KEY);
@@ -396,6 +437,7 @@ onBeforeUnmount(() => {
 
       <ChatPanel
         :active-article-id="selectedId"
+        :current-user-id="currentUser ? String(currentUser.userId) : null"
         @select-article="handleSelectArticleFromChat"
       />
     </div>

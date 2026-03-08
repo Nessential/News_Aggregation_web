@@ -63,6 +63,7 @@ export interface AgentRelatedNews {
   title?: string;
   url?: string;
   snippet?: string;
+  score?: number | null;
   source?: string;
   publishedAt?: string;
   imageUrl?: string;
@@ -77,12 +78,16 @@ export interface AgentAnswerItem {
 export interface AgentChatResponse {
   sessionId: string;
   turnId?: string;
-  turnStatus?: "DONE" | "RUNNING" | "BUSY" | "FAILED";
+  turnStatus?: "PENDING" | "RUNNING" | "DONE" | "FAILED" | "CANCELLED" | "BUSY";
   errorCode?: string | null;
   runningTurnId?: string | null;
   answer?: string;
   answerItems?: AgentAnswerItem[];
   taskFamily?: string;
+  needsClarification?: boolean;
+  clarificationPrompt?: string | null;
+  timestamp?: string;
+  executionTimeMs?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -90,9 +95,37 @@ export interface AgentSessionState {
   sessionId: string;
   userId?: string;
   activeTurnId?: string | null;
-  history?: unknown[];
+  history?: AgentHistoryMessage[];
   constraints?: AgentChatConstraints;
   budget?: Record<string, unknown> | null;
+}
+
+export interface AgentHistoryMessage {
+  messageId: number;
+  turnId: string;
+  sessionId: string;
+  userId?: string;
+  requestHash?: string;
+  role: 0 | 1;
+  status: 0 | 1 | 2;
+  seqNo: number;
+  content: string;
+  createdAt: string;
+}
+
+export interface AgentHistoryResponse {
+  sessionId: string;
+  turnId?: string;
+  messages: AgentHistoryMessage[];
+  count: number;
+}
+
+export interface AgentUserHistoryResponse {
+  userId: string;
+  pageNum: number;
+  pageSize: number;
+  messages: AgentHistoryMessage[];
+  count: number;
 }
 
 export interface SmsSendCodeRequest {

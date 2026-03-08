@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import type { ChatMessage } from "../types/news";
-import type { AgentChatResponse, AgentRelatedNews } from "../types/api";
+import type {
+  AgentChatResponse,
+  AgentHistoryMessage,
+  AgentRelatedNews,
+} from "../types/api";
 import { APP_CONFIG } from "../config/app";
-import { sendChat } from "../services/agent";
+import { getHistory, getHistoryByUser, sendChat } from "../services/agent";
 import { ApiError, formatApiError } from "../services/http";
 
 const emit = defineEmits<{
@@ -12,16 +16,21 @@ const emit = defineEmits<{
 
 const props = defineProps<{
   activeArticleId?: string | null;
+  currentUserId?: string | null;
 }>();
 
 const draft = ref<string>("");
 const messages = ref<ChatMessage[]>([]);
 const isSending = ref<boolean>(false);
 const sendError = ref<string>("");
+const historyError = ref<string>("");
 const sessionId = ref<string | null>(null);
+const isHistoryLoading = ref<boolean>(false);
 const debugEvents = ref<string[]>([]);
 const POLL_INTERVAL_MS = 1500;
 const POLL_TIMEOUT_MS = APP_CONFIG.timeout.chatPollMs;
+const SESSION_STORAGE_KEY = "news_agent_session_id";
+const SESSION_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const formatTime = (date: Date) => {
   const hours = String(date.getHours()).padStart(2, "0");
@@ -31,6 +40,10 @@ const formatTime = (date: Date) => {
 
 const appendMessage = (message: ChatMessage) => {
   messages.value = [...messages.value, message];
+};
+
+const replaceMessages = (nextMessages: ChatMessage[]) => {
+  messages.value = nextMessages;
 };
 
 const pushDebug = (message: string) => {
@@ -46,6 +59,69 @@ const createUuid = () => {
   }
   const random = Math.random().toString(16).slice(2);
   return `${Date.now().toString(16)}${random}`.slice(0, 32);
+};
+
+const formatHistoryTime = (value?: string) => {
+  if (!value) return formatTime(new Date());
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(11, 16) || formatTime(new Date());
+  return formatTime(date);
+};
+
+const persistSessionId = (value?: string | null) => {
+  if (typeof window === "undefined") return;
+  if (!value) {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(
+    SESSION_STORAGE_KEY,
+    JSON.stringify({
+      sessionId: value,
+      expiresAt: Date.now() + SESSION_STORAGE_TTL_MS,
+    })
+  );
+};
+
+const restoreSessionId = () => {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as
+      | string
+      | {
+          sessionId?: string;
+          expiresAt?: number;
+        };
+
+    if (typeof parsed === "string") {
+      persistSessionId(parsed);
+      return parsed;
+    }
+
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.sessionId === "string" &&
+      typeof parsed.expiresAt === "number"
+    ) {
+      if (parsed.expiresAt <= Date.now()) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        return null;
+      }
+      return parsed.sessionId;
+    }
+  } catch {
+    if (typeof raw === "string" && raw.trim()) {
+      persistSessionId(raw);
+      return raw;
+    }
+  }
+
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  return null;
 };
 
 const getErrorCode = (payload: unknown) => {
@@ -68,6 +144,9 @@ const buildAssistantFallback = (message: string): ChatMessage => ({
 });
 
 const resolveErrorMessage = (response: AgentChatResponse) => {
+  if (response.needsClarification && response.clarificationPrompt?.trim()) {
+    return response.clarificationPrompt;
+  }
   if (response.answer?.trim()) return response.answer;
   switch (response.errorCode) {
     case "SESSION_BUSY":
@@ -76,6 +155,69 @@ const resolveErrorMessage = (response: AgentChatResponse) => {
       return "Internal service error. Please try again later.";
     default:
       return "Chat request failed.";
+  }
+};
+
+const mapHistoryMessage = (message: AgentHistoryMessage): ChatMessage => ({
+  id: `history-${message.messageId}`,
+  role: message.role === 0 ? "user" : "assistant",
+  content: message.content,
+  time: formatHistoryTime(message.createdAt),
+  answerItems: [],
+});
+
+const loadHistory = async (existingSessionId: string) => {
+  isHistoryLoading.value = true;
+  historyError.value = "";
+  pushDebug(`Request: GET /api/agent/history/${existingSessionId}?limit=50`);
+
+  try {
+    const response = await getHistory(existingSessionId, { limit: 50 });
+    sessionId.value = response.sessionId;
+    persistSessionId(response.sessionId);
+    replaceMessages(
+      [...response.messages]
+        .sort((a, b) => {
+          if (a.turnId === b.turnId) {
+            return a.seqNo - b.seqNo;
+          }
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        })
+        .map(mapHistoryMessage)
+    );
+    pushDebug(`Response: /api/agent/history/${existingSessionId} count=${response.count}`);
+  } catch (error) {
+    historyError.value = formatApiError(error);
+    pushDebug(`Error: /api/agent/history/${existingSessionId} ${historyError.value}`);
+  } finally {
+    isHistoryLoading.value = false;
+  }
+};
+
+const loadUserHistory = async (userId: string) => {
+  isHistoryLoading.value = true;
+  historyError.value = "";
+  pushDebug(`Request: GET /api/agent/history/user/${userId}?pageNum=1&pageSize=50`);
+
+  try {
+    const response = await getHistoryByUser(userId, { pageNum: 1, pageSize: 50 });
+    const orderedMessages = [...response.messages].sort((a, b) => {
+      const timeDiff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      if (a.turnId === b.turnId) return a.seqNo - b.seqNo;
+      return 0;
+    });
+
+    replaceMessages(orderedMessages.map(mapHistoryMessage));
+    const latestSessionId = orderedMessages[orderedMessages.length - 1]?.sessionId ?? null;
+    sessionId.value = latestSessionId;
+    persistSessionId(latestSessionId);
+    pushDebug(`Response: /api/agent/history/user/${userId} count=${response.count}`);
+  } catch (error) {
+    historyError.value = formatApiError(error);
+    pushDebug(`Error: /api/agent/history/user/${userId} ${historyError.value}`);
+  } finally {
+    isHistoryLoading.value = false;
   }
 };
 
@@ -170,12 +312,14 @@ const handleSubmit = async () => {
 
   try {
     const payload = {
+      userId: props.currentUserId ?? undefined,
       sessionId: sessionId.value ?? undefined,
       turnId,
       idempotencyKey,
       query: text,
     };
     const response = await pollChatUntilDone(payload, Date.now());
+    persistSessionId(response.sessionId);
     pushDebug(
       `Response: /api/agent/chat session=${response.sessionId} turnStatus=${response.turnStatus ?? "DONE"}`
     );
@@ -210,6 +354,37 @@ const handleSubmit = async () => {
     isSending.value = false;
   }
 };
+
+onMounted(() => {
+  if (props.currentUserId) {
+    void loadUserHistory(props.currentUserId);
+    return;
+  }
+  const existingSessionId = restoreSessionId();
+  if (!existingSessionId) return;
+  sessionId.value = existingSessionId;
+  void loadHistory(existingSessionId);
+});
+
+watch(
+  () => props.currentUserId,
+  (userId, previousUserId) => {
+    if (userId && userId !== previousUserId) {
+      void loadUserHistory(userId);
+      return;
+    }
+
+    if (!userId && previousUserId) {
+      const existingSessionId = restoreSessionId();
+      if (!existingSessionId) {
+        sessionId.value = null;
+        return;
+      }
+      sessionId.value = existingSessionId;
+      void loadHistory(existingSessionId);
+    }
+  }
+);
 </script>
 
 <template>
@@ -231,6 +406,13 @@ const handleSubmit = async () => {
         <ul class="debug-list">
           <li v-for="event in debugEvents" :key="event">{{ event }}</li>
         </ul>
+      </div>
+      <div v-if="isHistoryLoading" class="detail-panel detail-panel--chat">
+        <p class="detail-panel__summary">Loading recent conversation...</p>
+      </div>
+      <div v-else-if="historyError" class="detail-panel detail-panel--chat">
+        <p class="detail-panel__title">History unavailable</p>
+        <p class="detail-panel__summary">{{ historyError }}</p>
       </div>
       <div v-if="sendError" class="detail-panel detail-panel--chat">
         <p class="detail-panel__title">Chat error</p>

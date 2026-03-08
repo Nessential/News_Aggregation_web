@@ -2,7 +2,9 @@ import { APP_CONFIG } from "../config/app";
 import type {
   AgentChatRequest,
   AgentChatResponse,
+  AgentHistoryResponse,
   AgentSessionState,
+  AgentUserHistoryResponse,
 } from "../types/api";
 import { createApiClient } from "./http";
 
@@ -31,4 +33,32 @@ export const deleteSession = async (sessionId: string) => {
   return client.request<void>(`/api/agent/session/${sessionId}`, {
     method: "DELETE",
   });
+};
+
+export const getHistory = async (
+  sessionId: string,
+  params?: { turnId?: string; limit?: number }
+) => {
+  const query = new URLSearchParams();
+  if (params?.turnId) query.set("turnId", params.turnId);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const queryString = query.toString();
+
+  return client.request<AgentHistoryResponse>(
+    `/api/agent/history/${sessionId}${queryString ? `?${queryString}` : ""}`
+  );
+};
+
+export const getHistoryByUser = async (
+  userId: string,
+  params?: { pageNum?: number; pageSize?: number }
+) => {
+  const query = new URLSearchParams();
+  if (params?.pageNum) query.set("pageNum", String(params.pageNum));
+  if (params?.pageSize) query.set("pageSize", String(params.pageSize));
+  const queryString = query.toString();
+
+  return client.request<AgentUserHistoryResponse>(
+    `/api/agent/history/user/${encodeURIComponent(userId)}${queryString ? `?${queryString}` : ""}`
+  );
 };
