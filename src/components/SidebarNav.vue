@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { categories } from "../data/mock";
+import type { Category } from "../types/news";
 
-const activeId = ref<string>(categories[0]?.id ?? "top-stories");
+defineProps<{
+  categories: Category[];
+  activeId: string;
+}>();
 
-const setActive = (id: string) => {
-  activeId.value = id;
-};
+const emit = defineEmits<{
+  (event: "select", category: Category): void;
+}>();
 </script>
 
 <template>
-  <aside class="panel scroll-panel bg-slate-900 text-white border border-slate-800 p-5">
-    <header class="mb-6">
-      <p class="text-sm uppercase tracking-[0.2em] text-slate-400">Categories</p>
-      <h2 class="section-title text-white">Discover</h2>
+  <aside class="panel scroll-panel p-5">
+    <header class="sidebar-panel__header mb-6">
+      <p class="text-sm uppercase tracking-[0.2em] text-slate-500">Categories</p>
+      <h2 class="section-title text-slate-900">Discover</h2>
     </header>
 
     <nav class="flex flex-col gap-2">
@@ -23,7 +25,7 @@ const setActive = (id: string) => {
         type="button"
         class="nav-item"
         :class="{ 'is-active': activeId === category.id }"
-        @click="setActive(category.id)"
+        @click="emit('select', category)"
       >
         <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10">
           <svg

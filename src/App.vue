@@ -1,31 +1,51 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { topStories } from "./data/mock";
-import type { Story } from "./types/news";
-import type { ArticleDetailResponse, ArticleListItem, UserAuthInfo } from "./types/api";
+import { categories as mockCategories, topStories } from "./data/mock";
+import type { Category, Story } from "./types/news";
+import type {
+  ArticleDetailResponse,
+  ArticleListItem,
+  NewsCategory,
+  UserAuthInfo,
+} from "./types/api";
 import SidebarNav from "./components/SidebarNav.vue";
 import TopStories from "./components/TopStories.vue";
 import NewsDetailPanel from "./components/NewsDetailPanel.vue";
 import ChatPanel from "./components/ChatPanel.vue";
 import { APP_CONFIG } from "./config/app";
-import { fetchArticleDetail, fetchArticles } from "./services/news";
+import {
+  fetchArticleDetail,
+  fetchArticles,
+  fetchArticlesByCategory,
+  fetchCategories,
+} from "./services/news";
 import { formatApiError } from "./services/http";
 import { loginBySms, sendSmsCode } from "./services/auth";
 
 const fallbackStories = topStories;
 const defaultStory = fallbackStories[0]!;
+const MIN_PAGE_SIZE = 9;
+const defaultCategory: Category = {
+  id: "all",
+  label: "All",
+  iconPath: mockCategories[0]?.iconPath ?? "M12 3l7 4v6c0 4-3 7-7 9-4-2-7-5-7-9V7l7-4z",
+};
 
+const categories = ref<Category[]>([defaultCategory]);
+const activeCategoryId = ref<string>(defaultCategory.id);
 const stories = ref<Story[]>(fallbackStories);
 const selectedId = ref<string>(defaultStory.id);
 const currentPage = ref<number>(1);
-const pageSize = ref<number>(9);
+const pageSize = ref<number>(MIN_PAGE_SIZE);
 const totalStories = ref<number>(fallbackStories.length);
 const isLoading = ref<boolean>(false);
+const isLoadingMore = ref<boolean>(false);
 const isDetailLoading = ref<boolean>(false);
 const loadError = ref<string>("");
 const detailError = ref<string>("");
 const dataSource = ref<"live" | "mock" | "loading">("mock");
 const debugEvents = ref<string[]>([]);
+const categoryError = ref<string>("");
 
 const currentUser = ref<UserAuthInfo | null>(null);
 const showLoginModal = ref<boolean>(false);
@@ -47,12 +67,14 @@ const USER_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 let resendTimer: ReturnType<typeof setInterval> | null = null;
 let storiesResizeObserver: ResizeObserver | null = null;
 const storiesShellRef = ref<HTMLElement | null>(null);
+const storiesScrollerRef = ref<HTMLElement | null>(null);
 
 const selectedStory = computed<Story>(() => {
   return stories.value.find((story) => story.id === selectedId.value) ?? defaultStory;
 });
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalStories.value / pageSize.value)));
+const hasMoreStories = computed(() => currentPage.value < totalPages.value);
 
 const updatePageSize = () => {
   const element = storiesShellRef.value;
@@ -65,14 +87,29 @@ const updatePageSize = () => {
   const columns = width >= 1200 ? 3 : Math.max(1, Math.floor(width / 210));
   const availableHeight = Math.max(220, height - 96);
   const rows = Math.max(1, Math.floor(availableHeight / 206));
-  const nextPageSize = Math.max(1, columns * rows);
+  const nextPageSize = Math.max(MIN_PAGE_SIZE, columns * rows);
 
   if (nextPageSize !== pageSize.value) {
     pageSize.value = nextPageSize;
     currentPage.value = 1;
+    stories.value = [];
     void loadStories();
   }
 };
+
+const buildCategoryIcon = (index: number) => {
+  return (
+    mockCategories[index % mockCategories.length]?.iconPath ??
+    defaultCategory.iconPath
+  );
+};
+
+const mapCategory = (category: NewsCategory, index: number): Category => ({
+  id: String(category.id),
+  apiId: category.id,
+  label: category.name,
+  iconPath: buildCategoryIcon(index),
+});
 
 const formatPublishedAt = (article: { publishedAt?: string; publicationTime?: number }) => {
   if (article.publishedAt) return `Published ${article.publishedAt}`;
@@ -98,6 +135,8 @@ const mapListItemToStory = (item: ArticleListItem, index: number): Story => {
     source: item.source,
     link: item.link,
     publishedAt: item.publishedAt,
+    categoryId: item.categoryId,
+    categoryName: item.categoryName,
   };
 };
 
@@ -116,6 +155,8 @@ const mapDetailToStory = (detail: ArticleDetailResponse): Story => {
     link: detail.link ?? existing?.link,
     publishedAt: detail.publishedAt ?? existing?.publishedAt,
     content: detail.content ?? existing?.content,
+    categoryId: detail.categoryId ?? existing?.categoryId,
+    categoryName: detail.categoryName ?? existing?.categoryName,
   };
 };
 
@@ -329,27 +370,63 @@ const applyDetailToStory = (detail: ArticleDetailResponse) => {
   upsertStory(mapDetailToStory(detail));
 };
 
-const loadStories = async () => {
-  isLoading.value = true;
-  loadError.value = "";
-  dataSource.value = "loading";
-  pushDebug(
-    `Request: GET /api/news/articles?page=${currentPage.value}&pageSize=${pageSize}&includeAltLang=true`
-  );
+const loadCategories = async () => {
+  categoryError.value = "";
+  pushDebug("Request: GET /api/news/categories");
 
   try {
-    const response = await fetchArticles({
-      page: currentPage.value,
-      pageSize: pageSize.value,
-      lang: preferredLang.value === "zh" ? "zh" : undefined,
-      includeAltLang: true,
-    });
+    const response = await fetchCategories();
+    categories.value = [defaultCategory, ...response.map(mapCategory)];
+    pushDebug(`Response: /api/news/categories items=${response.length}`);
+  } catch (error) {
+    categoryError.value = formatApiError(error);
+    categories.value = [defaultCategory, ...mockCategories];
+    pushDebug(`Error: /api/news/categories ${categoryError.value}`);
+  }
+};
 
+const requestStoriesPage = async (page: number) => {
+  pushDebug(
+    `Request: GET /api/news/articles?page=${page}&pageSize=${pageSize.value}&includeAltLang=true`
+  );
+
+  const activeCategory = categories.value.find(
+    (category) => category.id === activeCategoryId.value
+  );
+  const params = {
+    page,
+    pageSize: pageSize.value,
+    lang: preferredLang.value === "zh" ? "zh" : undefined,
+    includeAltLang: true,
+    categoryId: activeCategory?.apiId,
+  };
+
+  return activeCategory?.apiId && activeCategoryId.value !== defaultCategory.id
+    ? fetchArticlesByCategory(activeCategory.apiId, params)
+    : fetchArticles(params);
+};
+
+const loadStories = async (options?: { append?: boolean }) => {
+  const append = options?.append ?? false;
+  if (append) {
+    isLoadingMore.value = true;
+  } else {
+    isLoading.value = true;
+    loadError.value = "";
+    dataSource.value = "loading";
+  }
+
+  try {
+    const response = await requestStoriesPage(currentPage.value);
     const items = response.items ?? [];
+    const mappedStories = items.map(mapListItemToStory);
     totalStories.value = response.total ?? items.length;
-    if (items.length > 0) {
-      stories.value = items.map(mapListItemToStory);
-      selectedId.value = stories.value[0]?.id ?? defaultStory.id;
+
+    if (append) {
+      stories.value = [...stories.value, ...mappedStories];
+    } else if (mappedStories.length > 0) {
+      stories.value = mappedStories;
+      selectedId.value = mappedStories[0]?.id ?? defaultStory.id;
     } else {
       stories.value = [];
     }
@@ -360,9 +437,13 @@ const loadStories = async () => {
     loadError.value = formatApiError(error);
     dataSource.value = "mock";
     totalStories.value = fallbackStories.length;
+    if (!append) {
+      stories.value = fallbackStories.slice(0, pageSize.value);
+    }
     pushDebug(`Error: /api/news/articles ${loadError.value}`);
   } finally {
     isLoading.value = false;
+    isLoadingMore.value = false;
   }
 };
 
@@ -387,11 +468,25 @@ const handleSelect = (story: Story) => {
   selectedId.value = story.id;
 };
 
-const handleChangePage = (page: number) => {
-  if (page < 1 || page > totalPages.value || page === currentPage.value) return;
-  currentPage.value = page;
+const handleSelectCategory = (category: Category) => {
+  if (category.id === activeCategoryId.value) return;
+  activeCategoryId.value = category.id;
+  currentPage.value = 1;
   selectedId.value = "";
+  stories.value = [];
   void loadStories();
+};
+
+const handleStoriesScroll = () => {
+  const element = storiesScrollerRef.value;
+  if (!element || isLoading.value || isLoadingMore.value || !hasMoreStories.value) return;
+
+  const threshold = 120;
+  const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+  if (distanceToBottom > threshold) return;
+
+  currentPage.value += 1;
+  void loadStories({ append: true });
 };
 
 const handleSelectArticleFromChat = async (articleId: number) => {
@@ -424,6 +519,7 @@ watch(selectedId, (id) => {
 });
 
 restoreUser();
+void loadCategories();
 pushDebug("Init: loadStories()");
 void loadStories();
 
@@ -464,7 +560,11 @@ onMounted(() => {
     </header>
 
     <div class="app-shell">
-      <SidebarNav />
+      <SidebarNav
+        :categories="categories"
+        :active-id="activeCategoryId"
+        @select="handleSelectCategory"
+      />
 
       <main class="main-column">
         <section class="panel panel-soft p-5">
@@ -487,6 +587,10 @@ onMounted(() => {
             <p class="detail-panel__title">News feed fallback</p>
             <p class="detail-panel__summary">{{ loadError }}</p>
           </div>
+          <div v-if="categoryError" class="detail-panel detail-panel--chat mt-4">
+            <p class="detail-panel__title">Category fallback</p>
+            <p class="detail-panel__summary">{{ categoryError }}</p>
+          </div>
           <div class="detail-panel detail-panel--chat mt-4">
             <p class="detail-panel__eyebrow">Debug</p>
             <ul class="debug-list">
@@ -499,16 +603,17 @@ onMounted(() => {
           <div v-if="isLoading" class="detail-panel detail-panel--chat mb-4">
             <p class="detail-panel__summary">Loading latest stories...</p>
           </div>
+          <div ref="storiesScrollerRef" class="stories-scroll-area" @scroll="handleStoriesScroll">
           <TopStories
             :stories="stories"
             :active-id="selectedId"
-            :current-page="currentPage"
-            :total-pages="totalPages"
             :total-items="totalStories"
             :loading="isLoading"
+            :loading-more="isLoadingMore"
+            :has-more="hasMoreStories"
             @select="handleSelect"
-            @change-page="handleChangePage"
           />
+          </div>
         </section>
       </main>
 

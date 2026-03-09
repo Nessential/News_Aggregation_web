@@ -4,6 +4,7 @@ export interface Category {
   id: string;
   label: string;
   iconPath: string;
+  apiId?: number;
 }
 
 export interface Story {
@@ -18,6 +19,8 @@ export interface Story {
   link?: string;
   publishedAt?: string;
   content?: string;
+  categoryId?: number;
+  categoryName?: string;
 }
 
 export interface ArticleAction {

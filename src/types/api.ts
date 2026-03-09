@@ -2,6 +2,8 @@ export interface ArticleListItem {
   id: number;
   title: string;
   summary: string;
+  categoryId?: number;
+  categoryName?: string;
   titleCn?: string;
   summaryCn?: string;
   titleEn?: string;
@@ -24,6 +26,11 @@ export interface ArticleDetailResponse extends ArticleListItem {
   content?: string;
   contentCn?: string;
   contentEn?: string;
+}
+
+export interface NewsCategory {
+  id: number;
+  name: string;
 }
 
 export interface ArticleBatchItem {

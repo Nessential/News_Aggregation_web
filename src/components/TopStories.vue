@@ -5,15 +5,14 @@ import NewsCard from "./NewsCard.vue";
 defineProps<{
   stories: Story[];
   activeId: string;
-  currentPage: number;
-  totalPages: number;
   totalItems: number;
   loading?: boolean;
+  loadingMore?: boolean;
+  hasMore?: boolean;
 }>();
 
 const emit = defineEmits<{
   (event: "select", story: Story): void;
-  (event: "change-page", page: number): void;
 }>();
 </script>
 
@@ -36,36 +35,12 @@ const emit = defineEmits<{
       <div v-if="!loading && stories.length === 0" class="detail-panel detail-panel--chat">
         <p class="detail-panel__summary">No stories found for this page.</p>
       </div>
-    </div>
-    <div v-if="totalPages > 1" class="stories-panel__pagination">
-      <button
-        type="button"
-        class="pagination-button"
-        :disabled="currentPage <= 1"
-        @click="emit('change-page', currentPage - 1)"
-      >
-        Prev
-      </button>
-      <div class="pagination-strip">
-        <button
-          v-for="page in totalPages"
-          :key="page"
-          type="button"
-          class="pagination-chip"
-          :class="{ 'is-active': page === currentPage }"
-          @click="emit('change-page', page)"
-        >
-          {{ page }}
-        </button>
+      <div v-if="loadingMore" class="detail-panel detail-panel--chat mt-3">
+        <p class="detail-panel__summary">Loading more stories...</p>
       </div>
-      <button
-        type="button"
-        class="pagination-button"
-        :disabled="currentPage >= totalPages"
-        @click="emit('change-page', currentPage + 1)"
-      >
-        Next
-      </button>
+      <div v-else-if="!loading && !hasMore && stories.length > 0" class="detail-panel detail-panel--chat mt-3">
+        <p class="detail-panel__summary">No more stories.</p>
+      </div>
     </div>
   </section>
 </template>
