@@ -50,7 +50,6 @@ export interface AgentChatConstraints {
 }
 
 export interface AgentChatRequest {
-  userId?: string;
   sessionId?: string;
   turnId?: string;
   idempotencyKey?: string;
@@ -76,7 +75,7 @@ export interface AgentAnswerItem {
 }
 
 export interface AgentChatResponse {
-  sessionId: string;
+  sessionId?: string;
   turnId?: string;
   turnStatus?: "PENDING" | "RUNNING" | "DONE" | "FAILED" | "CANCELLED" | "BUSY";
   errorCode?: string | null;
@@ -150,4 +149,5 @@ export interface UserAuthInfo {
   email: string | null;
   phone: string;
   newUser: boolean;
+  token: string;
 }

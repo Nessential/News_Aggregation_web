@@ -3,6 +3,10 @@ export interface AppRuntimeConfig {
     news: string;
     agent: string;
   };
+  auth: {
+    bearerToken: string;
+    debugUserId: string;
+  };
   timeout: {
     requestMs: number;
     chatPollMs: number;
@@ -12,7 +16,11 @@ export interface AppRuntimeConfig {
 const DEFAULT_APP_CONFIG: AppRuntimeConfig = {
   apiBaseUrls: {
     news: "http://localhost:8080",
-    agent: "http://localhost:8084",
+    agent: "http://localhost:8088",
+  },
+  auth: {
+    bearerToken: "",
+    debugUserId: "",
   },
   timeout: {
     requestMs: 15000,
@@ -22,6 +30,7 @@ const DEFAULT_APP_CONFIG: AppRuntimeConfig = {
 
 export const APP_CONFIG: AppRuntimeConfig = {
   apiBaseUrls: { ...DEFAULT_APP_CONFIG.apiBaseUrls },
+  auth: { ...DEFAULT_APP_CONFIG.auth },
   timeout: { ...DEFAULT_APP_CONFIG.timeout },
 };
 
@@ -29,6 +38,7 @@ const mergeAppConfig = (partial?: Partial<AppRuntimeConfig>) => {
   if (!partial) return;
 
   Object.assign(APP_CONFIG.apiBaseUrls, partial.apiBaseUrls);
+  Object.assign(APP_CONFIG.auth, partial.auth);
   Object.assign(APP_CONFIG.timeout, partial.timeout);
 };
 

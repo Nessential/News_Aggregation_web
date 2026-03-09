@@ -7,6 +7,7 @@ import SidebarNav from "./components/SidebarNav.vue";
 import TopStories from "./components/TopStories.vue";
 import NewsDetailPanel from "./components/NewsDetailPanel.vue";
 import ChatPanel from "./components/ChatPanel.vue";
+import { APP_CONFIG } from "./config/app";
 import { fetchArticleDetail, fetchArticles } from "./services/news";
 import { formatApiError } from "./services/http";
 import { loginBySms, sendSmsCode } from "./services/auth";
@@ -137,7 +138,11 @@ const saveUser = (user: UserAuthInfo | null) => {
   if (typeof window === "undefined") return;
   if (!user) {
     localStorage.removeItem(USER_STORAGE_KEY);
+    APP_CONFIG.auth.bearerToken = "";
     return;
+  }
+  if (user.token) {
+    APP_CONFIG.auth.bearerToken = user.token;
   }
   localStorage.setItem(
     USER_STORAGE_KEY,
@@ -174,12 +179,18 @@ const restoreUser = () => {
       }
       if (isUserAuthInfo(parsed.user)) {
         currentUser.value = parsed.user;
+        if (parsed.user.token) {
+          APP_CONFIG.auth.bearerToken = parsed.user.token;
+        }
       }
       return;
     }
 
     if (isUserAuthInfo(parsed)) {
       currentUser.value = parsed;
+      if (parsed.token) {
+        APP_CONFIG.auth.bearerToken = parsed.token;
+      }
       saveUser(parsed);
     }
   } catch {
@@ -199,6 +210,7 @@ const closeLoginModal = () => {
   showLoginModal.value = false;
   authError.value = "";
   authHint.value = "";
+  codeInput.value = "";
 };
 
 const handleSendCode = async () => {
@@ -247,6 +259,9 @@ const handleSmsLogin = async () => {
     const user = await loginBySms({ phone, code });
     currentUser.value = user;
     saveUser(user);
+    pushDebug(`Login success: userId=${user.userId} token=${user.token ?? "(empty)"}`);
+    authError.value = "";
+    authHint.value = "";
     closeLoginModal();
   } catch (error) {
     authError.value = formatApiError(error);
@@ -263,6 +278,10 @@ const handleLogout = () => {
   showUserMenu.value = false;
   currentUser.value = null;
   saveUser(null);
+};
+
+const handleRequireLogin = () => {
+  openLoginModal();
 };
 
 const upsertStory = (story: Story) => {
@@ -438,6 +457,7 @@ onBeforeUnmount(() => {
       <ChatPanel
         :active-article-id="selectedId"
         :current-user-id="currentUser ? String(currentUser.userId) : null"
+        @require-login="handleRequireLogin"
         @select-article="handleSelectArticleFromChat"
       />
     </div>

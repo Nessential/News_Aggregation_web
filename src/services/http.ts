@@ -38,6 +38,21 @@ const resolveBaseUrl = (baseUrl: BaseUrlResolver) => {
   return typeof baseUrl === "function" ? baseUrl() : baseUrl;
 };
 
+const getDefaultAuthHeaders = () => {
+  const headers: Record<string, string> = {};
+
+  if (APP_CONFIG.auth.bearerToken) {
+    headers.Authorization = `Bearer ${APP_CONFIG.auth.bearerToken}`;
+  }
+
+  // Only use X-User-Id for local direct-to-agent debugging. In production the gateway injects it.
+  if (APP_CONFIG.auth.debugUserId) {
+    headers["X-User-Id"] = APP_CONFIG.auth.debugUserId;
+  }
+
+  return headers;
+};
+
 const buildUrl = (baseUrl: string, path: string) => {
   if (!baseUrl) return path;
   return baseUrl.replace(/\/$/, "") + path;
@@ -89,6 +104,7 @@ export const createApiClient = (baseUrl: BaseUrlResolver): ApiClient => {
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
+        ...getDefaultAuthHeaders(),
         ...options.headers,
       };
 

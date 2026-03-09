@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
 import type { ChatMessage } from "../types/news";
 import type {
@@ -12,6 +12,7 @@ import { ApiError, formatApiError } from "../services/http";
 
 const emit = defineEmits<{
   (event: "select-article", articleId: number): void;
+  (event: "require-login"): void;
 }>();
 
 const props = defineProps<{
@@ -68,14 +69,24 @@ const formatHistoryTime = (value?: string) => {
   return formatTime(date);
 };
 
+const getSessionStorageKey = (userId?: string | null) => {
+  return userId ? `${SESSION_STORAGE_KEY}_${userId}` : SESSION_STORAGE_KEY;
+};
+
+const clearSessionCache = (userId?: string | null) => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(getSessionStorageKey(userId));
+};
+
 const persistSessionId = (value?: string | null) => {
   if (typeof window === "undefined") return;
+  const storageKey = getSessionStorageKey(props.currentUserId);
   if (!value) {
-    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(storageKey);
     return;
   }
   localStorage.setItem(
-    SESSION_STORAGE_KEY,
+    storageKey,
     JSON.stringify({
       sessionId: value,
       expiresAt: Date.now() + SESSION_STORAGE_TTL_MS,
@@ -85,7 +96,8 @@ const persistSessionId = (value?: string | null) => {
 
 const restoreSessionId = () => {
   if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  const storageKey = getSessionStorageKey(props.currentUserId);
+  const raw = localStorage.getItem(storageKey);
   if (!raw) return null;
 
   try {
@@ -108,7 +120,7 @@ const restoreSessionId = () => {
       typeof parsed.expiresAt === "number"
     ) {
       if (parsed.expiresAt <= Date.now()) {
-        localStorage.removeItem(SESSION_STORAGE_KEY);
+        localStorage.removeItem(storageKey);
         return null;
       }
       return parsed.sessionId;
@@ -120,7 +132,7 @@ const restoreSessionId = () => {
     }
   }
 
-  localStorage.removeItem(SESSION_STORAGE_KEY);
+  localStorage.removeItem(storageKey);
   return null;
 };
 
@@ -148,6 +160,9 @@ const resolveErrorMessage = (response: AgentChatResponse) => {
     return response.clarificationPrompt;
   }
   if (response.answer?.trim()) return response.answer;
+  if (response.errorCode === "SESSION_FORBIDDEN") {
+    return "You do not have access to this session.";
+  }
   switch (response.errorCode) {
     case "SESSION_BUSY":
       return "Previous turn is still running. Please wait.";
@@ -188,6 +203,20 @@ const loadHistory = async (existingSessionId: string) => {
     pushDebug(`Response: /api/agent/history/${existingSessionId} count=${response.count}`);
   } catch (error) {
     historyError.value = formatApiError(error);
+    if (error instanceof ApiError && error.status === 404) {
+      clearSessionCache(props.currentUserId);
+      sessionId.value = null;
+      historyError.value = "Session expired or no longer exists. Please start a new conversation.";
+    } else if (error instanceof ApiError && error.status === 401) {
+      clearSessionCache(props.currentUserId);
+      sessionId.value = null;
+      historyError.value = "Please log in to load conversation history.";
+      emit("require-login");
+    } else if (error instanceof ApiError && error.status === 403) {
+      clearSessionCache(props.currentUserId);
+      sessionId.value = null;
+      historyError.value = "You do not have access to this session.";
+    }
     pushDebug(`Error: /api/agent/history/${existingSessionId} ${historyError.value}`);
   } finally {
     isHistoryLoading.value = false;
@@ -215,6 +244,10 @@ const loadUserHistory = async (userId: string) => {
     pushDebug(`Response: /api/agent/history/user/${userId} count=${response.count}`);
   } catch (error) {
     historyError.value = formatApiError(error);
+    if (error instanceof ApiError && error.status === 401) {
+      historyError.value = "Please log in to load conversation history.";
+      emit("require-login");
+    }
     pushDebug(`Error: /api/agent/history/user/${userId} ${historyError.value}`);
   } finally {
     isHistoryLoading.value = false;
@@ -232,7 +265,9 @@ const pollChatUntilDone = async (
 ) => {
   while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
     const response = await sendChat(payload);
-    sessionId.value = response.sessionId;
+    if (response.sessionId) {
+      sessionId.value = response.sessionId;
+    }
 
     if (response.turnStatus === "DONE" && !response.errorCode) {
       return response;
@@ -295,6 +330,11 @@ const buildAssistantMessage = (response: AgentChatResponse): ChatMessage => ({
 const handleSubmit = async () => {
   const text = draft.value.trim();
   if (!text || isSending.value) return;
+  if (!props.currentUserId) {
+    sendError.value = "Please log in before starting a conversation.";
+    emit("require-login");
+    return;
+  }
 
   sendError.value = "";
   const turnId = createUuid();
@@ -312,14 +352,15 @@ const handleSubmit = async () => {
 
   try {
     const payload = {
-      userId: props.currentUserId ?? undefined,
       sessionId: sessionId.value ?? undefined,
       turnId,
       idempotencyKey,
       query: text,
     };
     const response = await pollChatUntilDone(payload, Date.now());
-    persistSessionId(response.sessionId);
+    if (response.sessionId) {
+      persistSessionId(response.sessionId);
+    }
     pushDebug(
       `Response: /api/agent/chat session=${response.sessionId} turnStatus=${response.turnStatus ?? "DONE"}`
     );
@@ -332,7 +373,18 @@ const handleSubmit = async () => {
           ? (error.details as AgentChatResponse)
           : undefined;
       const errorCode = getErrorCode(error.details) ?? error.code;
-      if (errorCode === "SESSION_BUSY") {
+      if (error.status === 401 || errorCode === "UNAUTHORIZED") {
+        sendError.value = "Please log in before starting a conversation.";
+        emit("require-login");
+      } else if (error.status === 403 || errorCode === "SESSION_FORBIDDEN") {
+        clearSessionCache(props.currentUserId);
+        sessionId.value = null;
+        sendError.value = "You do not have access to this session. Please start a new conversation.";
+      } else if (error.status === 404) {
+        clearSessionCache(props.currentUserId);
+        sessionId.value = null;
+        sendError.value = "Session expired or no longer exists. Please start a new conversation.";
+      } else if (errorCode === "SESSION_BUSY") {
         sendError.value = "Previous turn is still running. Please wait.";
       } else if (errorCode === "INTERNAL_ERROR") {
         sendError.value = "Internal service error. Please try again later.";
@@ -356,32 +408,27 @@ const handleSubmit = async () => {
 };
 
 onMounted(() => {
-  if (props.currentUserId) {
-    void loadUserHistory(props.currentUserId);
-    return;
-  }
-  const existingSessionId = restoreSessionId();
-  if (!existingSessionId) return;
-  sessionId.value = existingSessionId;
-  void loadHistory(existingSessionId);
+  if (!props.currentUserId) return;
+  void loadUserHistory(props.currentUserId);
 });
 
 watch(
   () => props.currentUserId,
   (userId, previousUserId) => {
+    if (previousUserId && previousUserId !== userId) {
+      clearSessionCache(previousUserId);
+    }
+
     if (userId && userId !== previousUserId) {
       void loadUserHistory(userId);
       return;
     }
 
     if (!userId && previousUserId) {
-      const existingSessionId = restoreSessionId();
-      if (!existingSessionId) {
-        sessionId.value = null;
-        return;
-      }
-      sessionId.value = existingSessionId;
-      void loadHistory(existingSessionId);
+      sessionId.value = null;
+      replaceMessages([]);
+      historyError.value = "";
+      sendError.value = "";
     }
   }
 );
@@ -413,6 +460,12 @@ watch(
       <div v-else-if="historyError" class="detail-panel detail-panel--chat">
         <p class="detail-panel__title">History unavailable</p>
         <p class="detail-panel__summary">{{ historyError }}</p>
+      </div>
+      <div v-if="!currentUserId" class="detail-panel detail-panel--chat">
+        <p class="detail-panel__title">Login required</p>
+        <p class="detail-panel__summary">
+          Chat功能需要先登录，登录后才能查看历史会话并发送问题。
+        </p>
       </div>
       <div v-if="sendError" class="detail-panel detail-panel--chat">
         <p class="detail-panel__title">Chat error</p>
@@ -474,7 +527,7 @@ watch(
           <input
             v-model="draft"
             type="text"
-            placeholder="Type a message..."
+            :placeholder="currentUserId ? 'Type a message...' : 'Login required for chat'"
             :disabled="isSending"
           />
           <button type="submit" :disabled="isSending || !draft.trim()">
@@ -485,3 +538,4 @@ watch(
     </div>
   </aside>
 </template>
+

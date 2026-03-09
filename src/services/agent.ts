@@ -18,10 +18,10 @@ export const sendChat = async (payload: AgentChatRequest) => {
   });
 };
 
-export const createSession = async (userId?: string) => {
+export const createSession = async () => {
   return client.request<{ sessionId: string }>("/api/agent/session", {
     method: "POST",
-    body: userId ? { userId } : {},
+    body: {},
   });
 };
 
