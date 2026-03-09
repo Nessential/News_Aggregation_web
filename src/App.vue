@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { topStories } from "./data/mock";
 import type { Story } from "./types/news";
 import type { ArticleDetailResponse, ArticleListItem, UserAuthInfo } from "./types/api";
@@ -17,6 +17,9 @@ const defaultStory = fallbackStories[0]!;
 
 const stories = ref<Story[]>(fallbackStories);
 const selectedId = ref<string>(defaultStory.id);
+const currentPage = ref<number>(1);
+const pageSize = ref<number>(9);
+const totalStories = ref<number>(fallbackStories.length);
 const isLoading = ref<boolean>(false);
 const isDetailLoading = ref<boolean>(false);
 const loadError = ref<string>("");
@@ -42,10 +45,34 @@ const preferredLang = ref<string>(
 const USER_STORAGE_KEY = "news_user_auth";
 const USER_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 let resendTimer: ReturnType<typeof setInterval> | null = null;
+let storiesResizeObserver: ResizeObserver | null = null;
+const storiesShellRef = ref<HTMLElement | null>(null);
 
 const selectedStory = computed<Story>(() => {
   return stories.value.find((story) => story.id === selectedId.value) ?? defaultStory;
 });
+
+const totalPages = computed(() => Math.max(1, Math.ceil(totalStories.value / pageSize.value)));
+
+const updatePageSize = () => {
+  const element = storiesShellRef.value;
+  if (!element) return;
+
+  const width = element.clientWidth;
+  const height = element.clientHeight;
+  if (width <= 0 || height <= 0) return;
+
+  const columns = width >= 1200 ? 3 : Math.max(1, Math.floor(width / 210));
+  const availableHeight = Math.max(220, height - 96);
+  const rows = Math.max(1, Math.floor(availableHeight / 206));
+  const nextPageSize = Math.max(1, columns * rows);
+
+  if (nextPageSize !== pageSize.value) {
+    pageSize.value = nextPageSize;
+    currentPage.value = 1;
+    void loadStories();
+  }
+};
 
 const formatPublishedAt = (article: { publishedAt?: string; publicationTime?: number }) => {
   if (article.publishedAt) return `Published ${article.publishedAt}`;
@@ -280,6 +307,11 @@ const handleLogout = () => {
   saveUser(null);
 };
 
+const handleAuthExpired = () => {
+  handleLogout();
+  authError.value = "Login expired. Please log in again.";
+};
+
 const handleRequireLogin = () => {
   openLoginModal();
 };
@@ -301,27 +333,33 @@ const loadStories = async () => {
   isLoading.value = true;
   loadError.value = "";
   dataSource.value = "loading";
-  pushDebug("Request: GET /api/news/articles?page=1&pageSize=5&includeAltLang=true");
+  pushDebug(
+    `Request: GET /api/news/articles?page=${currentPage.value}&pageSize=${pageSize}&includeAltLang=true`
+  );
 
   try {
     const response = await fetchArticles({
-      page: 1,
-      pageSize: 5,
+      page: currentPage.value,
+      pageSize: pageSize.value,
       lang: preferredLang.value === "zh" ? "zh" : undefined,
       includeAltLang: true,
     });
 
     const items = response.items ?? [];
+    totalStories.value = response.total ?? items.length;
     if (items.length > 0) {
       stories.value = items.map(mapListItemToStory);
       selectedId.value = stories.value[0]?.id ?? defaultStory.id;
+    } else {
+      stories.value = [];
     }
 
     dataSource.value = "live";
-    pushDebug(`Response: /api/news/articles items=${items.length}`);
+    pushDebug(`Response: /api/news/articles items=${items.length} total=${totalStories.value}`);
   } catch (error) {
     loadError.value = formatApiError(error);
     dataSource.value = "mock";
+    totalStories.value = fallbackStories.length;
     pushDebug(`Error: /api/news/articles ${loadError.value}`);
   } finally {
     isLoading.value = false;
@@ -347,6 +385,13 @@ const loadStoryDetail = async (storyId: string) => {
 
 const handleSelect = (story: Story) => {
   selectedId.value = story.id;
+};
+
+const handleChangePage = (page: number) => {
+  if (page < 1 || page > totalPages.value || page === currentPage.value) return;
+  currentPage.value = page;
+  selectedId.value = "";
+  void loadStories();
 };
 
 const handleSelectArticleFromChat = async (articleId: number) => {
@@ -384,6 +429,16 @@ void loadStories();
 
 onBeforeUnmount(() => {
   clearResendTimer();
+  storiesResizeObserver?.disconnect();
+});
+
+onMounted(() => {
+  if (typeof ResizeObserver === "undefined" || !storiesShellRef.value) return;
+  storiesResizeObserver = new ResizeObserver(() => {
+    updatePageSize();
+  });
+  storiesResizeObserver.observe(storiesShellRef.value);
+  updatePageSize();
 });
 </script>
 
@@ -411,7 +466,7 @@ onBeforeUnmount(() => {
     <div class="app-shell">
       <SidebarNav />
 
-      <main class="space-y-6 scroll-column">
+      <main class="main-column">
         <section class="panel panel-soft p-5">
           <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -440,11 +495,20 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="panel p-5">
+        <section ref="storiesShellRef" class="panel p-5 stories-shell">
           <div v-if="isLoading" class="detail-panel detail-panel--chat mb-4">
             <p class="detail-panel__summary">Loading latest stories...</p>
           </div>
-          <TopStories :stories="stories" :active-id="selectedId" @select="handleSelect" />
+          <TopStories
+            :stories="stories"
+            :active-id="selectedId"
+            :current-page="currentPage"
+            :total-pages="totalPages"
+            :total-items="totalStories"
+            :loading="isLoading"
+            @select="handleSelect"
+            @change-page="handleChangePage"
+          />
         </section>
       </main>
 
@@ -457,6 +521,7 @@ onBeforeUnmount(() => {
       <ChatPanel
         :active-article-id="selectedId"
         :current-user-id="currentUser ? String(currentUser.userId) : null"
+        @auth-expired="handleAuthExpired"
         @require-login="handleRequireLogin"
         @select-article="handleSelectArticleFromChat"
       />

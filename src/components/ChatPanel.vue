@@ -13,6 +13,7 @@ import { ApiError, formatApiError } from "../services/http";
 const emit = defineEmits<{
   (event: "select-article", articleId: number): void;
   (event: "require-login"): void;
+  (event: "auth-expired"): void;
 }>();
 
 const props = defineProps<{
@@ -211,6 +212,7 @@ const loadHistory = async (existingSessionId: string) => {
       clearSessionCache(props.currentUserId);
       sessionId.value = null;
       historyError.value = "Please log in to load conversation history.";
+      emit("auth-expired");
       emit("require-login");
     } else if (error instanceof ApiError && error.status === 403) {
       clearSessionCache(props.currentUserId);
@@ -246,6 +248,7 @@ const loadUserHistory = async (userId: string) => {
     historyError.value = formatApiError(error);
     if (error instanceof ApiError && error.status === 401) {
       historyError.value = "Please log in to load conversation history.";
+      emit("auth-expired");
       emit("require-login");
     }
     pushDebug(`Error: /api/agent/history/user/${userId} ${historyError.value}`);
@@ -375,6 +378,7 @@ const handleSubmit = async () => {
       const errorCode = getErrorCode(error.details) ?? error.code;
       if (error.status === 401 || errorCode === "UNAUTHORIZED") {
         sendError.value = "Please log in before starting a conversation.";
+        emit("auth-expired");
         emit("require-login");
       } else if (error.status === 403 || errorCode === "SESSION_FORBIDDEN") {
         clearSessionCache(props.currentUserId);

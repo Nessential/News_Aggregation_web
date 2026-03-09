@@ -15,7 +15,7 @@ export interface AppRuntimeConfig {
 
 const DEFAULT_APP_CONFIG: AppRuntimeConfig = {
   apiBaseUrls: {
-    news: "http://localhost:8080",
+    news: "http://localhost:8088",
     agent: "http://localhost:8088",
   },
   auth: {
