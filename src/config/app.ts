@@ -1,5 +1,6 @@
 export interface AppRuntimeConfig {
   apiBaseUrls: {
+    gateway: string;
     news: string;
     agent: string;
   };
@@ -15,8 +16,9 @@ export interface AppRuntimeConfig {
 
 const DEFAULT_APP_CONFIG: AppRuntimeConfig = {
   apiBaseUrls: {
-    news: "http://localhost:8088",
-    agent: "http://localhost:8088",
+    gateway: "http://localhost:8088",
+    news: "",
+    agent: "",
   },
   auth: {
     bearerToken: "",
@@ -32,6 +34,10 @@ export const APP_CONFIG: AppRuntimeConfig = {
   apiBaseUrls: { ...DEFAULT_APP_CONFIG.apiBaseUrls },
   auth: { ...DEFAULT_APP_CONFIG.auth },
   timeout: { ...DEFAULT_APP_CONFIG.timeout },
+};
+
+export const getApiBaseUrl = (service: "news" | "agent") => {
+  return APP_CONFIG.apiBaseUrls[service] || APP_CONFIG.apiBaseUrls.gateway;
 };
 
 const mergeAppConfig = (partial?: Partial<AppRuntimeConfig>) => {

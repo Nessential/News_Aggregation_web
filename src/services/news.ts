@@ -1,4 +1,4 @@
-import { APP_CONFIG } from "../config/app";
+import { getApiBaseUrl } from "../config/app";
 import type {
   ArticleBatchResponse,
   ArticleDetailResponse,
@@ -7,7 +7,7 @@ import type {
 } from "../types/api";
 import { createApiClient } from "./http";
 
-const client = createApiClient(() => APP_CONFIG.apiBaseUrls.news);
+const client = createApiClient(() => getApiBaseUrl("news"));
 
 export interface FetchArticlesParams {
   page?: number;

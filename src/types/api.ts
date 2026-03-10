@@ -64,6 +64,35 @@ export interface AgentChatRequest {
   constraints?: AgentChatConstraints;
 }
 
+export interface AgentQuotaEntry {
+  feature: string;
+  remaining: number | null;
+  total?: number | null;
+  label?: string;
+  unit?: string;
+}
+
+export interface FeatureQuotaSnapshot {
+  featureCode: string;
+  enabled: boolean;
+  dailyLimit: number;
+  usedCount: number;
+  remainingCount: number;
+  expireAtEpochMs?: number;
+}
+
+export type FeatureQuotaMap = Record<string, FeatureQuotaSnapshot>;
+
+export interface AgentChatMetadata extends Record<string, unknown> {
+  remainingBudget?: number;
+  quotas?: AgentQuotaEntry[];
+}
+
+export interface AgentBudgetSnapshot extends Record<string, unknown> {
+  remainingBudget?: number;
+  quotas?: AgentQuotaEntry[];
+}
+
 export interface AgentRelatedNews {
   articleId: number;
   title?: string;
@@ -94,7 +123,8 @@ export interface AgentChatResponse {
   clarificationPrompt?: string | null;
   timestamp?: string;
   executionTimeMs?: number;
-  metadata?: Record<string, unknown>;
+  metadata?: AgentChatMetadata;
+  featureQuotas?: FeatureQuotaMap;
 }
 
 export interface AgentSessionState {
@@ -103,7 +133,13 @@ export interface AgentSessionState {
   activeTurnId?: string | null;
   history?: AgentHistoryMessage[];
   constraints?: AgentChatConstraints;
-  budget?: Record<string, unknown> | null;
+  budget?: AgentBudgetSnapshot | null;
+}
+
+export interface AgentRecentSessionItem {
+  sessionId: string;
+  userId?: string;
+  createdAt?: string;
 }
 
 export interface AgentHistoryMessage {
@@ -157,4 +193,10 @@ export interface UserAuthInfo {
   phone: string;
   newUser: boolean;
   token: string;
+  featureQuotas?: FeatureQuotaMap;
+}
+
+export interface UserQuotaMeResponse {
+  userId: number;
+  featureQuotas: FeatureQuotaMap;
 }

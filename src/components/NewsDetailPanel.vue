@@ -6,6 +6,11 @@ const props = defineProps<{
   selectedStory: Story;
   detailLoading?: boolean;
   detailError?: string;
+  preferredLang: "zh" | "en";
+}>();
+
+const emit = defineEmits<{
+  (event: "toggle-language"): void;
 }>();
 
 const articleBody = computed(() => props.selectedStory.content || props.selectedStory.detailSummary);
@@ -18,7 +23,12 @@ const articleBody = computed(() => props.selectedStory.content || props.selected
         <p class="text-xs uppercase tracking-[0.2em] text-slate-400">News Detail</p>
         <h2 class="section-title">Selected Story</h2>
       </div>
-      <span class="badge">Live</span>
+      <div class="flex items-center gap-2">
+        <button type="button" class="lang-toggle-button" @click="emit('toggle-language')">
+          {{ preferredLang === "zh" ? "Switch EN" : "Switch ZH" }}
+        </button>
+        <span class="badge">Live</span>
+      </div>
     </header>
 
     <div class="mt-4 space-y-4">

@@ -1,20 +1,21 @@
-import { APP_CONFIG } from "../config/app";
+import { getApiBaseUrl } from "../config/app";
 import type {
   AgentChatRequest,
   AgentChatResponse,
   AgentHistoryResponse,
+  AgentRecentSessionItem,
   AgentSessionState,
   AgentUserHistoryResponse,
 } from "../types/api";
 import { createApiClient } from "./http";
 
-const client = createApiClient(() => APP_CONFIG.apiBaseUrls.agent);
+const client = createApiClient(() => getApiBaseUrl("agent"));
 
 export const sendChat = async (payload: AgentChatRequest) => {
   return client.request<AgentChatResponse>("/api/agent/chat", {
     method: "POST",
     body: payload,
-    allowedStatusCodes: [202, 409],
+    allowedStatusCodes: [202, 409, 429],
   });
 };
 
@@ -33,6 +34,15 @@ export const deleteSession = async (sessionId: string) => {
   return client.request<void>(`/api/agent/session/${sessionId}`, {
     method: "DELETE",
   });
+};
+
+export const getRecentSessions = async (params?: { limit?: number }) => {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  const queryString = query.toString();
+  return client.request<AgentRecentSessionItem[]>(
+    `/api/agent/session/recent${queryString ? `?${queryString}` : ""}`
+  );
 };
 
 export const getHistory = async (

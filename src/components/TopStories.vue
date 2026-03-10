@@ -9,10 +9,12 @@ defineProps<{
   loading?: boolean;
   loadingMore?: boolean;
   hasMore?: boolean;
+  preferredLang: "zh" | "en";
 }>();
 
 const emit = defineEmits<{
   (event: "select", story: Story): void;
+  (event: "toggle-language"): void;
 }>();
 </script>
 
@@ -20,7 +22,12 @@ const emit = defineEmits<{
   <section class="stories-panel">
     <div class="flex items-center justify-between">
       <h2 class="section-title">Top Stories</h2>
-      <span class="badge">{{ totalItems }} stories</span>
+      <div class="flex items-center gap-2">
+        <button type="button" class="lang-toggle-button" @click="emit('toggle-language')">
+          {{ preferredLang === "zh" ? "Switch EN" : "Switch ZH" }}
+        </button>
+        <span class="badge">{{ totalItems }} stories</span>
+      </div>
     </div>
     <div class="stories-panel__content">
       <div class="story-grid">

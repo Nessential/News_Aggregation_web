@@ -118,6 +118,53 @@ img {
   flex-direction: column;
 }
 
+.chat-panel__status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.quota-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.quota-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  background: linear-gradient(180deg, #f8fbff, #eef4ff);
+  color: #1e3a8a;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+}
+
+.quota-badge__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.quota-badge__value {
+  font-size: 0.94rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.quota-badge__unit {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+}
+
 .chat-panel__body {
   display: flex;
   flex-direction: column;
@@ -302,6 +349,22 @@ img {
   color: var(--accent);
   font-weight: 600;
   font-size: 0.8rem;
+}
+
+.lang-toggle-button {
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  background: #ffffff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lang-toggle-button:hover {
+  background: #eff6ff;
+  border-color: rgba(37, 99, 235, 0.45);
 }
 
 .chat-bubble {

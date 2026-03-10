@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { categories as mockCategories, topStories } from "./data/mock";
 import type { Category, Story } from "./types/news";
 import type {
+  FeatureQuotaMap,
   ArticleDetailResponse,
   ArticleListItem,
   NewsCategory,
@@ -35,6 +36,7 @@ const categories = ref<Category[]>([defaultCategory]);
 const activeCategoryId = ref<string>(defaultCategory.id);
 const stories = ref<Story[]>(fallbackStories);
 const selectedId = ref<string>(defaultStory.id);
+const selectedStoryDetail = ref<Story | null>(null);
 const currentPage = ref<number>(1);
 const pageSize = ref<number>(MIN_PAGE_SIZE);
 const totalStories = ref<number>(fallbackStories.length);
@@ -58,7 +60,10 @@ const authError = ref<string>("");
 const authHint = ref<string>("");
 const resendCountdown = ref<number>(0);
 
-const preferredLang = ref<string>(
+const storiesLang = ref<"zh" | "en">(
+  typeof navigator !== "undefined" && navigator.language.startsWith("zh") ? "zh" : "en"
+);
+const detailLang = ref<"zh" | "en">(
   typeof navigator !== "undefined" && navigator.language.startsWith("zh") ? "zh" : "en"
 );
 
@@ -71,6 +76,19 @@ const storiesScrollerRef = ref<HTMLElement | null>(null);
 
 const selectedStory = computed<Story>(() => {
   return stories.value.find((story) => story.id === selectedId.value) ?? defaultStory;
+});
+
+const detailPanelStory = computed<Story>(() => {
+  if (selectedStoryDetail.value && selectedStoryDetail.value.id === selectedId.value) {
+    return selectedStoryDetail.value;
+  }
+  return selectedStory.value;
+});
+
+const currentUserQuotas = computed<FeatureQuotaMap | null>(() => {
+  const user = currentUser.value;
+  if (!user) return null;
+  return user.featureQuotas ?? null;
 });
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalStories.value / pageSize.value)));
@@ -122,15 +140,36 @@ const formatPublishedAt = (article: { publishedAt?: string; publicationTime?: nu
   return "Recently updated";
 };
 
+const pickLocalizedText = (
+  lang: "zh" | "en",
+  primary: string | undefined,
+  zh: string | undefined,
+  en: string | undefined
+) => {
+  if (lang === "zh") {
+    return zh || primary || en || "";
+  }
+  return en || primary || zh || "";
+};
+
 const mapListItemToStory = (item: ArticleListItem, index: number): Story => {
   const fallbackImage = fallbackStories[index % fallbackStories.length]?.image ?? "";
   return {
     id: String(item.id),
-    title: item.title,
-    summary: item.summary,
+    title:
+      pickLocalizedText(storiesLang.value, item.title, item.titleCn, item.titleEn) ||
+      item.title ||
+      "Untitled article",
+    summary:
+      pickLocalizedText(storiesLang.value, item.summary, item.summaryCn, item.summaryEn) ||
+      item.summary ||
+      "",
     image: item.imageUrl ?? fallbackImage,
     updatedAt: formatPublishedAt(item),
-    detailSummary: item.summary,
+    detailSummary:
+      pickLocalizedText(storiesLang.value, item.summary, item.summaryCn, item.summaryEn) ||
+      item.summary ||
+      "",
     highlights: [],
     source: item.source,
     link: item.link,
@@ -143,18 +182,57 @@ const mapListItemToStory = (item: ArticleListItem, index: number): Story => {
 const mapDetailToStory = (detail: ArticleDetailResponse): Story => {
   const existing = stories.value.find((story) => story.id === String(detail.id));
   const fallbackImage = existing?.image ?? fallbackStories[0]?.image ?? "";
+  const localizedSummary =
+    pickLocalizedText(detailLang.value, detail.summary, detail.summaryCn, detail.summaryEn) ||
+    existing?.summary ||
+    "";
+  const localizedContent =
+    pickLocalizedText(detailLang.value, detail.content, detail.contentCn, detail.contentEn) ||
+    localizedSummary;
   return {
     id: String(detail.id),
-    title: detail.title || existing?.title || "Untitled article",
-    summary: detail.summary || existing?.summary || "",
+    title:
+      pickLocalizedText(detailLang.value, detail.title, detail.titleCn, detail.titleEn) ||
+      existing?.title ||
+      "Untitled article",
+    summary: localizedSummary,
     image: detail.imageUrl ?? fallbackImage,
     updatedAt: formatPublishedAt(detail),
-    detailSummary: detail.content ?? detail.summary ?? existing?.detailSummary ?? "",
+    detailSummary: localizedContent || existing?.detailSummary || "",
     highlights: existing?.highlights ?? [],
     source: detail.source ?? existing?.source,
     link: detail.link ?? existing?.link,
     publishedAt: detail.publishedAt ?? existing?.publishedAt,
-    content: detail.content ?? existing?.content,
+    content: localizedContent || existing?.content,
+    categoryId: detail.categoryId ?? existing?.categoryId,
+    categoryName: detail.categoryName ?? existing?.categoryName,
+  };
+};
+
+const mapDetailToListStory = (detail: ArticleDetailResponse): Story => {
+  const existing = stories.value.find((story) => story.id === String(detail.id));
+  const fallbackImage = existing?.image ?? fallbackStories[0]?.image ?? "";
+  return {
+    id: String(detail.id),
+    title:
+      pickLocalizedText(storiesLang.value, detail.title, detail.titleCn, detail.titleEn) ||
+      existing?.title ||
+      "Untitled article",
+    summary:
+      pickLocalizedText(storiesLang.value, detail.summary, detail.summaryCn, detail.summaryEn) ||
+      existing?.summary ||
+      "",
+    image: detail.imageUrl ?? fallbackImage,
+    updatedAt: formatPublishedAt(detail),
+    detailSummary:
+      pickLocalizedText(storiesLang.value, detail.summary, detail.summaryCn, detail.summaryEn) ||
+      existing?.detailSummary ||
+      "",
+    highlights: existing?.highlights ?? [],
+    source: detail.source ?? existing?.source,
+    link: detail.link ?? existing?.link,
+    publishedAt: detail.publishedAt ?? existing?.publishedAt,
+    content: existing?.content,
     categoryId: detail.categoryId ?? existing?.categoryId,
     categoryName: detail.categoryName ?? existing?.categoryName,
   };
@@ -366,10 +444,6 @@ const upsertStory = (story: Story) => {
   stories.value = [story, ...stories.value];
 };
 
-const applyDetailToStory = (detail: ArticleDetailResponse) => {
-  upsertStory(mapDetailToStory(detail));
-};
-
 const loadCategories = async () => {
   categoryError.value = "";
   pushDebug("Request: GET /api/news/categories");
@@ -396,7 +470,7 @@ const requestStoriesPage = async (page: number) => {
   const params = {
     page,
     pageSize: pageSize.value,
-    lang: preferredLang.value === "zh" ? "zh" : undefined,
+    lang: storiesLang.value === "zh" ? "zh" : undefined,
     includeAltLang: true,
     categoryId: activeCategory?.apiId,
   };
@@ -450,11 +524,11 @@ const loadStories = async (options?: { append?: boolean }) => {
 const loadStoryDetail = async (storyId: string) => {
   isDetailLoading.value = true;
   detailError.value = "";
-  pushDebug(`Request: GET /api/news/articles/${storyId}?lang=zh`);
+  pushDebug(`Request: GET /api/news/articles/${storyId}?lang=${detailLang.value}`);
 
   try {
-    const detail = await fetchArticleDetail(storyId, preferredLang.value === "zh" ? "zh" : undefined);
-    applyDetailToStory(detail);
+    const detail = await fetchArticleDetail(storyId, detailLang.value === "zh" ? "zh" : undefined);
+    selectedStoryDetail.value = mapDetailToStory(detail);
     pushDebug(`Response: /api/news/articles/${storyId}`);
   } catch (error) {
     detailError.value = formatApiError(error);
@@ -466,6 +540,7 @@ const loadStoryDetail = async (storyId: string) => {
 
 const handleSelect = (story: Story) => {
   selectedId.value = story.id;
+  selectedStoryDetail.value = null;
 };
 
 const handleSelectCategory = (category: Category) => {
@@ -473,8 +548,25 @@ const handleSelectCategory = (category: Category) => {
   activeCategoryId.value = category.id;
   currentPage.value = 1;
   selectedId.value = "";
+  selectedStoryDetail.value = null;
   stories.value = [];
   void loadStories();
+};
+
+const toggleStoriesLang = () => {
+  storiesLang.value = storiesLang.value === "zh" ? "en" : "zh";
+  pushDebug(`Stories language switched: ${storiesLang.value}`);
+  currentPage.value = 1;
+  stories.value = [];
+  void loadStories();
+};
+
+const toggleDetailLang = () => {
+  detailLang.value = detailLang.value === "zh" ? "en" : "zh";
+  pushDebug(`Detail language switched: ${detailLang.value}`);
+  if (selectedId.value && isNumericId(selectedId.value)) {
+    void loadStoryDetail(selectedId.value);
+  }
 };
 
 const handleStoriesScroll = () => {
@@ -493,16 +585,18 @@ const handleSelectArticleFromChat = async (articleId: number) => {
   const storyId = String(articleId);
   if (stories.value.some((story) => story.id === storyId)) {
     selectedId.value = storyId;
+    selectedStoryDetail.value = null;
     return;
   }
 
   isDetailLoading.value = true;
   detailError.value = "";
-  pushDebug(`Request: GET /api/news/articles/${storyId}?lang=zh [from chat]`);
+  pushDebug(`Request: GET /api/news/articles/${storyId}?lang=${detailLang.value} [from chat]`);
 
   try {
-    const detail = await fetchArticleDetail(storyId, preferredLang.value === "zh" ? "zh" : undefined);
-    applyDetailToStory(detail);
+    const detail = await fetchArticleDetail(storyId, detailLang.value === "zh" ? "zh" : undefined);
+    upsertStory(mapDetailToListStory(detail));
+    selectedStoryDetail.value = mapDetailToStory(detail);
     selectedId.value = storyId;
     pushDebug(`Response: /api/news/articles/${storyId} [from chat]`);
   } catch (error) {
@@ -515,6 +609,7 @@ const handleSelectArticleFromChat = async (articleId: number) => {
 
 watch(selectedId, (id) => {
   if (!id || !isNumericId(id)) return;
+  selectedStoryDetail.value = null;
   void loadStoryDetail(id);
 });
 
@@ -611,21 +706,26 @@ onMounted(() => {
             :loading="isLoading"
             :loading-more="isLoadingMore"
             :has-more="hasMoreStories"
+            :preferred-lang="storiesLang"
             @select="handleSelect"
+            @toggle-language="toggleStoriesLang"
           />
           </div>
         </section>
       </main>
 
       <NewsDetailPanel
-        :selected-story="selectedStory"
+        :selected-story="detailPanelStory"
         :detail-loading="isDetailLoading"
         :detail-error="detailError"
+        :preferred-lang="detailLang"
+        @toggle-language="toggleDetailLang"
       />
 
       <ChatPanel
         :active-article-id="selectedId"
         :current-user-id="currentUser ? String(currentUser.userId) : null"
+        :initial-feature-quotas="currentUserQuotas"
         @auth-expired="handleAuthExpired"
         @require-login="handleRequireLogin"
         @select-article="handleSelectArticleFromChat"
