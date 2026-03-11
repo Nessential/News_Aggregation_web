@@ -35,6 +35,7 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  markdownContent?: string;
   time: string;
   answerItems?: AgentAnswerItem[];
 }

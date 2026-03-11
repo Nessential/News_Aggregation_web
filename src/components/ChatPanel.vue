@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 import type { ChatMessage } from "../types/news";
 import type {
   AgentBudgetSnapshot,
@@ -10,6 +10,7 @@ import type {
   FeatureQuotaMap,
 } from "../types/api";
 import { APP_CONFIG } from "../config/app";
+import MarkdownRenderer from "./MarkdownRenderer.vue";
 import {
   getHistory,
   getHistoryByUser,
@@ -41,6 +42,7 @@ const sessionId = ref<string | null>(null);
 const isHistoryLoading = ref<boolean>(false);
 const debugEvents = ref<string[]>([]);
 const quotaItems = ref<AgentQuotaEntry[]>([]);
+const messagesContainerRef = ref<HTMLElement | null>(null);
 const POLL_INTERVAL_MS = 1500;
 const POLL_TIMEOUT_MS = APP_CONFIG.timeout.chatPollMs;
 const SESSION_STORAGE_KEY = "news_agent_session_id";
@@ -52,12 +54,23 @@ const formatTime = (date: Date) => {
   return `${hours}:${minutes}`;
 };
 
+const scrollMessagesToBottom = (behavior: ScrollBehavior = "smooth") => {
+  const container = messagesContainerRef.value;
+  if (!container) return;
+  container.scrollTo({
+    top: container.scrollHeight,
+    behavior,
+  });
+};
+
 const appendMessage = (message: ChatMessage) => {
   messages.value = [...messages.value, message];
+  void nextTick(() => scrollMessagesToBottom("smooth"));
 };
 
 const replaceMessages = (nextMessages: ChatMessage[]) => {
   messages.value = nextMessages;
+  void nextTick(() => scrollMessagesToBottom("auto"));
 };
 
 const pushDebug = (message: string) => {
@@ -296,6 +309,7 @@ const buildAssistantFallback = (message: string): ChatMessage => ({
   id: `assistant-${Date.now()}`,
   role: "assistant",
   content: message,
+  markdownContent: message,
   time: formatTime(new Date()),
   answerItems: [],
 });
@@ -326,6 +340,7 @@ const mapHistoryMessage = (message: AgentHistoryMessage): ChatMessage => ({
   id: `history-${message.messageId}`,
   role: message.role === 0 ? "user" : "assistant",
   content: message.content,
+  markdownContent: message.role === 1 ? message.content : undefined,
   time: formatHistoryTime(message.createdAt),
   answerItems: [],
 });
@@ -557,7 +572,8 @@ const isEvidenceActive = (articleId?: number) => {
 const buildAssistantMessage = (response: AgentChatResponse): ChatMessage => ({
   id: `assistant-${Date.now()}`,
   role: "assistant",
-  content: response.answer || "No answer returned.",
+  content: response.answer || response.answerMarkdown || "No answer returned.",
+  markdownContent: response.answerMarkdown || response.answer || "",
   time: formatTime(new Date()),
   answerItems: response.answerItems ?? [],
 });
@@ -747,20 +763,25 @@ watch(
         <p class="detail-panel__title">Chat error</p>
         <p class="detail-panel__summary">{{ sendError }}</p>
       </div>
-      <div class="chat-panel__messages">
+      <div ref="messagesContainerRef" class="chat-panel__messages">
         <div
           v-for="message in messages"
           :key="message.id"
           class="chat-bubble"
           :class="message.role"
         >
-          <template v-if="message.role === 'assistant' && message.answerItems?.length">
+          <template v-if="message.role === 'assistant'">
+            <MarkdownRenderer
+              v-if="message.markdownContent?.trim()"
+              :content="message.markdownContent"
+            />
+            <p v-else>{{ message.content }}</p>
             <div
-              v-for="(item, index) in message.answerItems"
+              v-for="(item, index) in message.answerItems || []"
               :key="`${message.id}-${index}`"
               class="assistant-answer-block"
             >
-              <p class="assistant-answer-text">{{ item.text }}</p>
+              <p v-if="!message.markdownContent?.trim()" class="assistant-answer-text">{{ item.text }}</p>
               <div v-if="getEvidenceList(message, index).length" class="evidence-strip">
                 <button
                   v-for="evidence in getEvidenceList(message, index)"
@@ -814,4 +835,3 @@ watch(
     </div>
   </aside>
 </template>
-

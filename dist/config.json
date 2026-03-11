@@ -1,6 +1,6 @@
 {
   "apiBaseUrls": {
-    "gateway": "http://localhost:8088",
+    "gateway": "http://localhost:8091",
     "news": "",
     "agent": ""
   },

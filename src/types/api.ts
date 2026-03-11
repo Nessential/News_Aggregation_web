@@ -117,6 +117,7 @@ export interface AgentChatResponse {
   errorCode?: string | null;
   runningTurnId?: string | null;
   answer?: string;
+  answerMarkdown?: string;
   answerItems?: AgentAnswerItem[];
   taskFamily?: string;
   needsClarification?: boolean;
