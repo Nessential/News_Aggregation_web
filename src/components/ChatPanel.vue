@@ -569,10 +569,17 @@ const isEvidenceActive = (articleId?: number) => {
   return String(articleId) === props.activeArticleId;
 };
 
+const buildAnswerFromItems = (response: AgentChatResponse) => {
+  const texts = (response.answerItems ?? [])
+    .map((item) => item.text?.trim())
+    .filter((text): text is string => Boolean(text));
+  return texts.join("\n\n");
+};
+
 const buildAssistantMessage = (response: AgentChatResponse): ChatMessage => ({
   id: `assistant-${Date.now()}`,
   role: "assistant",
-  content: response.answer || response.answerMarkdown || "No answer returned.",
+  content: buildAnswerFromItems(response) || response.answerMarkdown || response.answer || "No answer returned.",
   markdownContent: response.answerMarkdown || response.answer || "",
   time: formatTime(new Date()),
   answerItems: response.answerItems ?? [],
@@ -771,17 +778,17 @@ watch(
           :class="message.role"
         >
           <template v-if="message.role === 'assistant'">
-            <MarkdownRenderer
-              v-if="message.markdownContent?.trim()"
-              :content="message.markdownContent"
-            />
-            <p v-else>{{ message.content }}</p>
-            <div
-              v-for="(item, index) in message.answerItems || []"
-              :key="`${message.id}-${index}`"
-              class="assistant-answer-block"
-            >
-              <p v-if="!message.markdownContent?.trim()" class="assistant-answer-text">{{ item.text }}</p>
+            <template v-if="message.answerItems?.length">
+              <div
+                v-for="(item, index) in message.answerItems"
+                :key="`${message.id}-${index}`"
+                class="assistant-answer-block"
+              >
+                <MarkdownRenderer
+                  v-if="item.text?.trim()"
+                  :content="item.text"
+                />
+                <p v-else class="assistant-answer-text">{{ item.text }}</p>
               <div v-if="getEvidenceList(message, index).length" class="evidence-strip">
                 <button
                   v-for="evidence in getEvidenceList(message, index)"
@@ -810,7 +817,15 @@ watch(
                   </div>
                 </button>
               </div>
-            </div>
+              </div>
+            </template>
+            <template v-else>
+              <MarkdownRenderer
+                v-if="message.markdownContent?.trim()"
+                :content="message.markdownContent"
+              />
+              <p v-else>{{ message.content }}</p>
+            </template>
           </template>
           <template v-else>
             <p>{{ message.content }}</p>
