@@ -1,0 +1,15 @@
+{
+  "apiBaseUrls": {
+    "gateway": "http://localhost:8091",
+    "news": "",
+    "agent": ""
+  },
+  "auth": {
+    "bearerToken": "",
+    "debugUserId": ""
+  },
+  "timeout": {
+    "requestMs": 60000,
+    "chatPollMs": 60000
+  }
+}
